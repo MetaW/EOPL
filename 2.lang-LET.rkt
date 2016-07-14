@@ -31,6 +31,13 @@
            (body expression?)))
 
 
+; scan&parse
+;----------------------------------------------------
+
+
+
+
+
 ; expressed valus <-> denoted value
 ;----------------------------------------------------
 (define-datatype expval expval?
@@ -51,7 +58,7 @@
       (else (eopl:error "expval extract error in expval->bool: ~s" val)))))
 
 
-; env
+; environment
 ;----------------------------------------------------
 (define-datatype env env?
   (empty-env)
@@ -81,8 +88,18 @@
                       (apply-env var e))))))
 
 
-; value-of : Exp * Env -> ExpVal
+; eval
+;----------------------------------------------------
 
+; run : String -> Expval
+(define run
+  ())
+
+; value-of-program : Program -> Expval
+(define value-of-program
+  ())
+
+; value-of : Exp * Env -> ExpVal
 (define value-of
   (lambda (exp env)
     (cases expression exp
@@ -105,3 +122,4 @@
                                         (extend-env var
                                                     (value-of exp env)
                                                     env))))))
+
