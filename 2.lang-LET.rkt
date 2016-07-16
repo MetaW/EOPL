@@ -33,7 +33,15 @@
 
 ; scan&parse
 ;----------------------------------------------------
+(define scanner-spec
+  '((whitespace (whitespace) skip)
+    (comment (";" (arbno (not #\newline))) skip)
+    (identifer (letter (arbno letter digit "-" "_" "?")) symbol)
+    (number (digit (arbno digit)) number)
+    (number ("-" digit (arbno digit)) number)))
 
+(define parser-spec
+  '())
 
 
 
