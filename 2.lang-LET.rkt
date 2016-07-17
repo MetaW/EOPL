@@ -37,7 +37,7 @@
 (define scanner-spec
   '((whitespace (whitespace) skip)
     (comment (";" (arbno (not #\newline))) skip)
-    (identifer (letter (arbno letter digit "-" "_" "?")) symbol)
+    (identifer (letter (arbno (or letter digit "-" "_" "?"))) symbol)
     (number (digit (arbno digit)) number)
     (number ("-" digit (arbno digit)) number)))
 ;   (class (regexp) action)
