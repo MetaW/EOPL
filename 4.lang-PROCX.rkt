@@ -1,9 +1,8 @@
 #lang eopl
-;language-LETREC:
-;support 
+;language-PROCX: support more than one parameters
 
 
-;language-LETREC : concrete & abstract syntax tree
+;language-PROCX : concrete & abstract syntax tree
 ;----------------------------------------------------
 ;concrete syntax tree:
 
