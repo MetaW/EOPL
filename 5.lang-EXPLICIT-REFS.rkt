@@ -26,7 +26,7 @@
 ;---scanner&grammar spec
 (define scanner-spec
   '((whitespace (whitespace) skip)
-    (comment (";" (arbno (not #\newline))) skip)
+    (comment ("%" (arbno (not #\newline))) skip)
     (identifer (letter (arbno (or letter digit "-" "_" "?"))) symbol)
     (number (digit (arbno digit)) number)
     (number ("-" digit (arbno digit)) number)))
@@ -107,12 +107,13 @@
   (procedure (var symbol?)
              (body expression?)
              (en env?)))
-
-(define reference?
+; ref type = number => address in store
+(define ref?
   (lambda (ref)
     (number? ref)))
 
 
+;!!! expval
 (define-datatype expval expval?
   (num-val (num number?))
   (bool-val (bool boolean?))
@@ -142,16 +143,20 @@
       (else (eopl:error "expval extract error in expval->bool: ~s" val)))))
 
 
-; extractor : expval -> reference
-(define ref-val->ref
+; extractor : expval -> ref
+(define expval->ref
   (lambda (val)
     (cases expval val
       (ref-val (ref) ref)
-      (else (eopl:error "expval extract error in expval->bool: ~s" val)))))
+      (else (eopl:error "expval extract error in expval->ref: ~s" val)))))
 
 
 ; environment & store
 ;=====================================================================
+;env   : var --- (ref-val ref)
+;store :                  ref--- expval
+
+
 ;---environment---   
 
 (define-datatype env env?
@@ -187,7 +192,7 @@
 ;unlike env, store is global
 (define the-store 'uninitialized)
 
-;--interface-for-store
+;---interface-for-store
 
 ;empty-store : () -> '()
 (define empty-store
@@ -196,25 +201,46 @@
 (define get-store
   (lambda () the-store))
 
+;---
 (define init-store!
-  (set! the-store (empty-store)))
-
-
-;create,lookup,update
-(define apply-newref
-  (lambda (exp)
-    ()))
-
+  (lambda ()
+    (set! the-store (empty-store))))
 
 ; eval
 ;=====================================================================
 
 ; auxiliary function for value-of
+
 ; apply-procdure : proc * expval -> expval
 (define apply-procedure
   (lambda (proc0 val)
     (cases proc proc0
       (procedure (var body en) (value-of body (extend-env var val en))))))
+
+; apply-newref : expval -> ref
+(define apply-newref
+  (lambda (val)
+    (let ([ref (length the-store)])
+      (set! the-store (append the-store (list val)))
+      ref)))
+
+; apply-deref : ref -> expval
+(define apply-deref
+  (lambda (ref)
+    (list-ref the-store ref)))
+
+; apply-setref : ref * expval -> unspecified
+(define apply-setref!
+  (lambda (ref val)
+    (define in-setref!
+      (lambda (store ref)
+        (cond ((null? store) (eopl:error "uninitilized store"))
+              ((= 0 ref) (cons val (cdr store)))
+              (else (cons (car store)
+                          (in-setref! (cdr store) (- ref 1)))))))
+    (set! the-store (in-setref! the-store ref))))
+
+
 
 
 ; value-of : Exp * Env -> ExpVal
@@ -244,12 +270,26 @@
       (call-exp (procid exp)
                 (let ((proci (expval->proc (value-of procid env)))
                       (param (value-of exp env)))
-                  (apply-procedure proci param))))))
+                  (apply-procedure proci param)))
+      (begin-exp (exp exps)
+                 (define inner
+                   (lambda (expr exprs)
+                     (let ((v1 (value-of expr env)))
+                         (if (null? exprs)
+                         v1
+                         (inner (car exprs) (cdr exprs))))))
+                 (inner exp exps))
+      (newref-exp (exp) (ref-val (apply-newref (value-of exp env))))
+      (deref-exp (exp) (apply-deref (expval->ref (value-of exp env))))
+      (setref-exp (exp1 exp2) (let ((ref (expval->ref (value-of exp1 env)))
+                                    (val (value-of exp2 env)))
+                                (apply-setref! ref val))))))
 
 
 ; value-of-program : Program -> Expval
 (define value-of-program
   (lambda (pgm)
+    (init-store!)
     (cases program pgm
       (a-program (exp) (value-of exp init-env)))))
 
@@ -263,12 +303,9 @@
 
 ; test
 ;=====================================================================
+;  (run "begin 1;2;3 end")
+;  #(struct:num-val 3)
 
-;> (run "let f = proc (x) -(x,10) in (f 20)")
-;  #(struct:num-val 10)
+;> (run "let x = newref(10) in begin setref(x,20); deref(x) end")
+;  #(struct:num-val 20)
 
-;> (run "let f = proc (x) proc (y) -(x,y) in ((f 5) 3)")
-; #(struct:num-val 2)
-
-;> (run "let x = 200 in let f = proc (z) -(z,x) in let x = 100 in let g = proc (z) -(z,x) in -((f 1), (g 1))")
-;  #(struct:num-val -100)
