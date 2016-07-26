@@ -1,5 +1,5 @@
 #lang eopl
-;lang-MUTABLE-PAIRS
+;lang-CALL-BY-REFERENCE
 
 
 ;concrete & abstract syntax tree & scanner/parser
