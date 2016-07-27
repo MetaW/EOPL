@@ -221,11 +221,11 @@
 
 ; auxiliary function for value-of
 
-; apply-procdure : proc * expval -> expval
+; apply-procdure : proc * ref -> expval  !!!
 (define apply-procedure
-  (lambda (proc0 val)
+  (lambda (proc0 ref0)
     (cases proc proc0
-      (procedure (var body en) (value-of body (extend-env var (apply-newref val) en))))))
+      (procedure (var body en) (value-of body (extend-env var ref0 en))))))
 
 ; apply-newref : expval -> ref
 (define apply-newref
@@ -279,8 +279,10 @@
       (proc-exp (param body) (proc-val (procedure param body env)))
       (call-exp (procid exp)
                 (let ((proci (expval->proc (value-of procid env)))
-                      (param (value-of exp env)))
-                  (apply-procedure proci param)))
+                      (refi (cases expression exp ;!!!var => get ref, other exp => get value and create a new ref
+                              (var-exp (var) (apply-env var env))
+                              (else (apply-newref (value-of exp env))))))
+                  (apply-procedure proci refi)))
       (begin-exp (exp exps)
                  (define inner
                    (lambda (expr exprs)
@@ -326,17 +328,6 @@
 
 ; test
 ;=====================================================================
-;> (run "let x = pair(22,33) in x")
-;  #(struct:mutpair-val #(struct:a-pair 3 4))
 
-;> (run "let x = pair(22,33) in left(x)")
-;  #(struct:num-val 22)
-
-;> (run "let x = pair(22,33) in right(x)")
-;  #(struct:num-val 33)
-
-;> (run "let x = pair(22,33) in begin setleft(x,55); left(x) end")
-;  #(struct:num-val 55)
-
-;> (run "let x = pair(22,33) in begin setright(x,55); right(x) end")
-;  #(struct:num-val 55)
+;> (run "let f = proc (x) set x = 5 in let t = 2 in begin (f t); t end")
+;  #(struct:num-val 5)
