@@ -1,5 +1,5 @@
-#lang eopl
-;lang-CALL-BY-REFERENCE
+ #lang eopl
+;lang-CPS-interpreter
 
 
 ;concrete & abstract syntax tree & scanner/parser
@@ -216,6 +216,23 @@
   (lambda ()
     (set! the-store (list (num-val 1) (num-val 5) (num-val 10)))))
 
+
+; continuation
+;=====================================================================
+(define end-cont
+  (lambda (val)
+    (begin
+      (display "End of computation!")
+      val)))
+
+
+; apply-cont : cont * expval -> finalanswer
+(define apply-cont
+  (lambda (cont val)
+    (cont val)))
+
+
+
 ; eval
 ;=====================================================================
 
@@ -253,36 +270,40 @@
 
 
 
-; value-of : Exp * Env -> ExpVal
-(define value-of
-  (lambda (exp env)
+; value-of/k : Exp * Env * cont -> finalanswer
+(define value-of/k
+  (lambda (exp env cont)
     (cases expression exp
-      (const-exp (num) (num-val num))
-      (var-exp (var) (apply-deref (apply-env var env)))
-      (diff-exp (exp1 exp2) (num-val
-                             (- (expval->num (value-of exp1 env))
-                                (expval->num (value-of exp2 env)))))
-      (zero?-exp (exp)
-                 (let ((val (expval->num (value-of exp env))))
-                   (if (= val 0)
-                       (bool-val #t)
-                       (bool-val #f))))
-      (if-exp (exp1 exp2 exp3)
-              (let ((condi (expval->bool (value-of exp1 env))))
-                (if condi
-                    (value-of exp2 env)
-                    (value-of exp3 env))))
-      (let-exp (var exp body) (value-of body
-                                        (extend-env var
-                                                    (apply-newref (value-of exp env))
-                                                    env)))
-      (proc-exp (param body) (proc-val (procedure param body env)))
-      (call-exp (procid exp)
-                (let ((proci (expval->proc (value-of procid env)))
-                      (refi (cases expression exp ;!!!var => get ref, other exp => get value and create a new ref
-                              (var-exp (var) (apply-env var env))
-                              (else (apply-newref (value-of exp env))))))
-                  (apply-procedure proci refi)))
+      (const-exp (num) (apply-cont cont (num-val num)))
+      (var-exp (var) (apply-cont cont (apply-deref (apply-env var env))))
+      (diff-exp (exp1 exp2) (value-of/k exp1
+                                        env
+                                        (lambda (val1)
+                                          (value-of/k exp2
+                                                      env
+                                                      (lambda (val2)
+                                                        (apply-cont cont
+                                                                    (num-val (- (expval->num val1) (expval->num val2)))))))))
+      (zero?-exp (exp) (value-of/k exp
+                                   env
+                                   (lambda (val)
+                                     (apply-cont cont
+                                                 (bool-val (zero? (expval->bool val)))))))
+      (if-exp (exp1 exp2 exp3) (value-of/k exp1 env (lambda (val1)
+                                                      (if (expval->bool val1)
+                                                          (value-of/k exp2 env cont)
+                                                          (value-of/k exp3 env cont)))))
+      (let-exp (var exp body) (value-of/k exp env (lambda (val)
+                                                    (value-of/k body (extend-env var (apply-newref val) env) cont))))
+      (proc-exp (param body) (apply-cont cont (proc-val (procedure param body env))))
+      (call-exp (procid exp) (value-of/k procid env (lambda (val)
+                                                      (let ((proci (expval->proc (value-of procid env))))
+                                                         (cases expression exp ;!!!var => get ref, other exp => get value and create a new ref
+                                                           (var-exp (var) (apply-procedure proci (apply-env var env) cont))
+                                                           (else (value-of/k exp env (lambda (val)
+
+                                                                                       (apply-procedure proci (apply-newref val) cont)))))))))
+;!!!!!TODO      
       (begin-exp (exp exps)
                  (define inner
                    (lambda (expr exprs)
