@@ -17,13 +17,6 @@
 ;              | let Identifer = Expression in Expression
 ;              | proc (Idenfifer) Expression
 ;              | (Expression Expression)
-;              | begin Expression {; Expression}* end
-;              | set Identifer = Expression
-;              | pair(Expression, Expression)
-;              | left(Expression)
-;              | right(Expression)
-;              | setleft(Expression,Expression)
-;              | setright(Expression,Expression)
 
 
 
@@ -47,14 +40,7 @@
    (expression (identifer) var-exp)
    (expression ("let" identifer "=" expression "in" expression) let-exp)
    (expression ("proc" "(" identifer ")" expression) proc-exp)
-   (expression ("(" expression expression ")") call-exp)
-   (expression ("begin" expression (arbno ";" expression) "end") begin-exp)
-   (expression ("set" identifer "=" expression) assign-exp)
-   (expression ("pair" "(" expression "," expression ")") pair-exp)
-   (expression ("left" "(" expression ")") left-exp)
-   (expression ("right" "(" expression ")") right-exp)
-   (expression ("setleft" "(" expression "," expression ")") setleft-exp)
-   (expression ("setright" "(" expression "," expression ")") setright-exp)))
+   (expression ("(" expression expression ")") call-exp)))
 ;  (algebric-data-type (reg-exp of concrete-syntax with class/string/ADT) constructor)
 ; class/string -> terminator
 ; ADT -> nonterminator
@@ -82,14 +68,7 @@
    (var-exp (var-exp9 symbol?))
    (let-exp (let-exp10 symbol?) (let-exp11 expression?) (let-exp12 expression?))
    (proc-exp (proc-exp13 symbol?) (proc-exp14 expression?))
-   (call-exp (call-exp15 expression?) (call-exp16 expression?))
-   (begin-exp (begin-exp17 expression?) (begin-exp18 (list-of expression?)))
-   (assign-exp (assign-exp19 symbol?) (assign-exp20 expression?))
-   (pair-exp (pair-exp21 expression?) (pair-exp22 expression?))
-   (left-exp (left-exp23 expression?))
-   (right-exp (right-exp24 expression?))
-   (setleft-exp (setleft-exp25 expression?) (setleft-exp26 expression?))
-   (setright-exp (setright-exp27 expression?) (setright-exp28 expression?)))
+   (call-exp (call-exp15 expression?) (call-exp16 expression?)))
 
 
 
@@ -119,18 +98,11 @@
     (number? ref)))
 
 
-;mutpair type
-(define-datatype mutpair mutpair?
-  (a-pair (left-loc ref?)
-          (right-loc ref?)))
-
-
 ;------ expressed value : expval
 (define-datatype expval expval?
   (num-val (num number?))
   (bool-val (bool boolean?))
-  (proc-val (proc proc?))
-  (mutpair-val (pair mutpair?)))
+  (proc-val (proc proc?)))
 
 
 ; extractor : expval -> number
@@ -153,12 +125,6 @@
     (cases expval val
       (proc-val (proc) proc)
       (else (eopl:error "expval extract error in expval->proc: ~s" val)))))
-; extractor : expval -> mutpair
-(define expval->mutpair
-  (lambda (val)
-    (cases expval val
-      (mutpair-val (mutpair) mutpair)
-      (else (eopl:error "expval extract error in expval->mutpair: ~s" val)))))
 
 
 ; environment & store
@@ -235,14 +201,16 @@
 
 ; eval
 ;=====================================================================
+; cont :: Expval -> finalanswer
+;------
 
 ; auxiliary function for value-of
 
-; apply-procdure : proc * ref -> expval  !!!
-(define apply-procedure
-  (lambda (proc0 ref0)
+; apply-procdure : proc * ref * cont -> expval  !!!
+(define apply-procedure/k
+  (lambda (proc0 ref0 cont)
     (cases proc proc0
-      (procedure (var body en) (value-of body (extend-env var ref0 en))))))
+      (procedure (var body en) (value-of/k body (extend-env var ref0 en) cont)))))
 
 ; apply-newref : expval -> ref
 (define apply-newref
@@ -288,7 +256,7 @@
                                    env
                                    (lambda (val)
                                      (apply-cont cont
-                                                 (bool-val (zero? (expval->bool val)))))))
+                                                 (bool-val (zero? (expval->num val)))))))
       (if-exp (exp1 exp2 exp3) (value-of/k exp1 env (lambda (val1)
                                                       (if (expval->bool val1)
                                                           (value-of/k exp2 env cont)
@@ -297,39 +265,11 @@
                                                     (value-of/k body (extend-env var (apply-newref val) env) cont))))
       (proc-exp (param body) (apply-cont cont (proc-val (procedure param body env))))
       (call-exp (procid exp) (value-of/k procid env (lambda (val)
-                                                      (let ((proci (expval->proc (value-of procid env))))
+                                                      (let ((proci (expval->proc val)))
                                                          (cases expression exp ;!!!var => get ref, other exp => get value and create a new ref
-                                                           (var-exp (var) (apply-procedure proci (apply-env var env) cont))
+                                                           (var-exp (var) (apply-procedure/k proci (apply-env var env) cont))
                                                            (else (value-of/k exp env (lambda (val)
-
-                                                                                       (apply-procedure proci (apply-newref val) cont)))))))))
-;!!!!!TODO      
-      (begin-exp (exp exps)
-                 (define inner
-                   (lambda (expr exprs)
-                     (let ((v1 (value-of expr env)))
-                         (if (null? exprs)
-                         v1
-                         (inner (car exprs) (cdr exprs))))))
-                 (inner exp exps))
-      (assign-exp (var exp) (apply-setref! (apply-env var env) (value-of exp env)))
-      (pair-exp (exp1 exp2) (let ((v1 (value-of exp1 env))
-                                  (v2 (value-of exp2 env)))
-                              (mutpair-val (a-pair (apply-newref v1) (apply-newref v2)))))
-      (left-exp (exp) (let ((v (expval->mutpair (value-of exp env))))
-                        (cases mutpair v
-                          (a-pair (l-loc r-loc) (apply-deref l-loc)))))
-      (right-exp (exp) (let ((v (expval->mutpair (value-of exp env))))
-                        (cases mutpair v
-                          (a-pair (l-loc r-loc) (apply-deref r-loc)))))
-      (setleft-exp (exp1 exp2) (let ([pair (expval->mutpair (value-of exp1 env))]
-                                     [val (value-of exp2 env)])
-                                 (cases mutpair pair
-                                   (a-pair (l-loc r-loc) (apply-setref! l-loc val)))))
-      (setright-exp (exp1 exp2) (let ([pair (expval->mutpair (value-of exp1 env))]
-                                     [val (value-of exp2 env)])
-                                 (cases mutpair pair
-                                   (a-pair (l-loc r-loc) (apply-setref! r-loc val))))))))
+                                                                                       (apply-procedure/k proci (apply-newref val) cont))))))))))))
 
 
 ; value-of-program : Program -> Expval
@@ -337,7 +277,7 @@
   (lambda (pgm)
     (init-store!)
     (cases program pgm
-      (a-program (exp) (value-of exp init-env)))))
+      (a-program (exp) (value-of/k exp init-env end-cont)))))
 
 
 ; run : String -> Expval
@@ -350,5 +290,11 @@
 ; test
 ;=====================================================================
 
-;> (run "let f = proc (x) set x = 5 in let t = 2 in begin (f t); t end")
-;  #(struct:num-val 5)
+;> (run "let x = 3 in x")
+;  End of computation!#(struct:num-val 3)
+
+;> (run "let f = proc (x) -(x,1) in (f 5)")
+;  End of computation!#(struct:num-val 4)
+
+;> (run "let x = 5 in if zero?(x) then x else -(0,x)")
+;  End of computation!#(struct:num-val -5)
