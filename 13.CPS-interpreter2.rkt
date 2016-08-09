@@ -1,5 +1,10 @@
  #lang eopl
-;CPS-interpreter : procedure representation
+;CPS-interpreter2 : data structure representation.
+
+;this imterpreter was written with continuation passing style with
+;data structure representation of continuation to avoid the use
+;of higher order function, so that it can be implemented in a language
+;that do not support higher order function.
 
 
 ;concrete & abstract syntax tree & scanner/parser
@@ -81,7 +86,7 @@
 
 ; expressed value & denoted value
 ;=====================================================================
-;expressed value : Int Bool Proc Mutpair
+;expressed value : Int Bool Proc
 ;denoted value   : Ref(expressed value)
 ;-------
 
@@ -185,24 +190,56 @@
 
 ; continuation
 ;=====================================================================
-(define end-cont
-  (lambda (val)
-    (begin
-      (display "End of computation!")
-      val)))
+
+(define-datatype cont cont?
+  (end-cont)
+  (diff-cont1 (cont cont?)
+              (env env?)
+              (exp2 expression?))
+  (diff-cont2 (cont cont?)
+              (val expval?))
+  (zero?-cont (cont cont?))
+  (if-cont (cont cont?)
+           (env env?)
+           (exp2 expression?)
+           (exp3 expression?))
+  (let-cont (cont cont?)
+            (env env?)
+            (var symbol?)
+            (body expression?))
+  (call-cont (cont cont?)
+             (env env?)
+             (rand expression?))
+  (call-cont2 (cont cont?)
+              (proc proc?)))
 
 
-; apply-cont : cont * expval -> finalanswer
+;apply-cont : cont * expval -> finalanswer
 (define apply-cont
-  (lambda (cont val)
-    (cont val)))
+  (lambda (ct val)
+    (cases cont ct
+      (end-cont () (begin (display "End of computation!")
+                          val))
+      (diff-cont1 (ct0 ev exp) (value-of/k exp ev (diff-cont2 ct0 val)))
+      (diff-cont2 (ct0 val0) (apply-cont ct0 (num-val (- (expval->num val0)
+                                                         (expval->num val)))))
+      (zero?-cont (ct0) (apply-cont ct0 (if (= (expval->num val) 0)
+                                            (bool-val #t)
+                                            (bool-val #f))))
+      (if-cont (ct0 ev exp2 exp3) (if (expval->bool val)
+                                      (value-of/k exp2 ev ct0)
+                                      (value-of/k exp3 ev ct0)))
+      (let-cont (ct0 ev var body) (value-of/k body (extend-env var (apply-newref val) ev) ct0))
+      (call-cont (ct0 ev rand) (let ((proci (expval->proc val)))
+                                 (cases expression rand
+                                   (var-exp (var) (apply-procedure/k proci (apply-env var ev) ct0))
+                                   (else (value-of/k rand ev (call-cont2 ct0 proci))))))
+      (call-cont2 (ct0 proci) (apply-procedure/k proci (apply-newref val) ct0)))))
 
 
 
 ; eval
 ;=====================================================================
-; cont :: Expval -> finalanswer
-;------
 
 ; auxiliary function for value-of
 
@@ -246,30 +283,15 @@
       (var-exp (var) (apply-cont cont (apply-deref (apply-env var env))))
       (diff-exp (exp1 exp2) (value-of/k exp1
                                         env
-                                        (lambda (val1)
-                                          (value-of/k exp2
-                                                      env
-                                                      (lambda (val2)
-                                                        (apply-cont cont
-                                                                    (num-val (- (expval->num val1) (expval->num val2)))))))))
+                                        (diff-cont1 cont env exp2)))
       (zero?-exp (exp) (value-of/k exp
                                    env
-                                   (lambda (val)
-                                     (apply-cont cont
-                                                 (bool-val (zero? (expval->num val)))))))
-      (if-exp (exp1 exp2 exp3) (value-of/k exp1 env (lambda (val1)
-                                                      (if (expval->bool val1)
-                                                          (value-of/k exp2 env cont)
-                                                          (value-of/k exp3 env cont)))))
-      (let-exp (var exp body) (value-of/k exp env (lambda (val)
-                                                    (value-of/k body (extend-env var (apply-newref val) env) cont))))
+                                   (zero?-cont cont)))
+      (if-exp (exp1 exp2 exp3) (value-of/k exp1 env (if-cont cont env exp2 exp3)))
+      (let-exp (var exp body) (value-of/k exp env (let-cont cont env var body)))
       (proc-exp (param body) (apply-cont cont (proc-val (procedure param body env))))
-      (call-exp (procid exp) (value-of/k procid env (lambda (val)
-                                                      (let ((proci (expval->proc val)))
-                                                         (cases expression exp ;!!!var => get ref, other exp => get value and create a new ref
-                                                           (var-exp (var) (apply-procedure/k proci (apply-env var env) cont))
-                                                           (else (value-of/k exp env (lambda (val)
-                                                                                       (apply-procedure/k proci (apply-newref val) cont))))))))))))
+      (call-exp (procid exp) (value-of/k procid env (call-cont cont env exp))))))
+
 
 
 ; value-of-program : Program -> Expval
@@ -277,7 +299,7 @@
   (lambda (pgm)
     (init-store!)
     (cases program pgm
-      (a-program (exp) (value-of/k exp init-env end-cont)))))
+      (a-program (exp) (value-of/k exp init-env (end-cont))))))
 
 
 ; run : String -> Expval
