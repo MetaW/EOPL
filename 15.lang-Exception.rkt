@@ -349,5 +349,8 @@
 ; test
 ;=====================================================================
 
+;> (run "raise 45")
+;  Error: Uncaught exception!!!
+
 ;> (run "try if zero?(3) then 1234 else raise -1 catch (x) -(x,1)")
 ;  End of computation!#(struct:num-val -2)
