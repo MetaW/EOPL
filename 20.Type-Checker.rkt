@@ -1,4 +1,5 @@
 #lang eopl
+; a type checker for lang-PROC
 
 ;language-PROC : concrete & abstract syntax tree
 ;----------------------------------------------------
@@ -12,8 +13,12 @@
 ;              | if Expression then Expression else Expression
 ;              | Identifer
 ;              | let Identifer = Expression in Expression
-;              | proc (Idenfifer) Expression
+;              | proc (Idenfifer : Type) Expression
 ;              | (Expression Expression)
+
+;Type :: = Int
+;        | Bool
+;        | (Type -> Type)
 
 
 ; abstract syntax tree
@@ -33,9 +38,17 @@
            (exp expression?)
            (body expression?))
   (proc-exp (var symbol?)
+            (arg-ty type?)
             (body expression?))
   (call-exp (operator expression?)
             (operand expression?)))
+
+(define-datetype type type?
+  (int-type)
+  (bool-type)
+  (proc-type (arg-ty type?)
+             (res-ty type?)))
+
 
 
 
@@ -43,7 +56,7 @@
 ;----------------------------------------------------
 (define scanner-spec
   '((whitespace (whitespace) skip)
-    (comment (";" (arbno (not #\newline))) skip)
+    (comment ("%" (arbno (not #\newline))) skip)
     (identifer (letter (arbno (or letter digit "-" "_" "?"))) symbol)
     (number (digit (arbno digit)) number)
     (number ("-" digit (arbno digit)) number)))
@@ -59,8 +72,11 @@
    (expression ("if" expression "then" expression "else" expression) if-exp)
    (expression (identifer) var-exp)
    (expression ("let" identifer "=" expression "in" expression) let-exp)
-   (expression ("proc" "(" identifer ")" expression) proc-exp)
-   (expression ("(" expression expression ")") call-exp)))
+   (expression ("proc" "(" identifer ":" type ")" expression) proc-exp)
+   (expression ("(" expression expression ")") call-exp)
+   (type ("int") int-type)
+   (type ("bool") bool-type)
+   (type ("(" type "->" type ")") proc-type)))
 ;  (algebric-data-type (concrete-syntax-with-class/string/ADT) constructor)
 ; class/string : terminator
 ; ADT : nonterminator
@@ -71,8 +87,11 @@
   (sllgen:make-string-parser scanner-spec parser-spec))
 
 
-; expressed valus <-> denoted value
+; expressed valus && denoted value
 ;----------------------------------------------------
+;expressed value : num-val, bool-val, proc-val
+;denoted value : num-val, bool-val, proc-val
+
 
 ; datatype proc is not necessary
 (define-datatype proc proc?
@@ -109,88 +128,49 @@
 
 
 
-; environment
+; type environment
 ;----------------------------------------------------
-(define-datatype env env?
-  (empty-env)
-  (extend-env (var symbol?)
-              (val expval?) ; !!! env store expression value instead of denoted value
-              (e env?)))
+(define-datatype tenv tenv?
+  (empty-tenv)
+  (extend-tenv (var symbol?)
+               (ty type?) ; !!! tenv store types of var
+               (e tenv?)))
 
-; init-env
-(define init-env
-  (extend-env
-   'i (num-val 1)
-   (extend-env
-    'v (num-val 5)
-    (extend-env
-     'x (num-val 10)
-     (empty-env)))))
+; init-tenv
+(define init-tenv
+     (extend-tenv
+      'i (int-type)
+      (extend-tenv
+       'v (int-type)
+       (extend-tenv
+        'x (int-type)
+        (empty-tenv)))))
 
 
-; apply-env : symbol * env -> expval
-(define apply-env
+; apply-tenv : symbol * tenv -> type
+(define apply-tenv
   (lambda (var en)
-    (cases env en
-      (empty-env () (eopl:error "Unbound variable : ~s" var))
-      (extend-env (v val e)
-                  (if (equal? v var)
-                      val
-                      (apply-env var e))))))
+    (cases tenv en
+      (empty-tenv  () (eopl:error "apply-tenv : Unbound variable : ~s" var))
+      (extend-tenv (v ty e)
+                   (if (equal? v var)
+                       ty
+                       (apply-tenv var e))))))
 
 
-; eval
+
+; type checker
 ;----------------------------------------------------
 
-; auxiliary function for value-of
-; apply-procdure : proc * expval -> expval
-(define apply-procedure
-  (lambda (proc0 val)
-    (cases proc proc0
-      (procedure (var body en) (value-of body (extend-env var val en))))))
+; auxiliary function:
+; check-equal-type! : type * type * exp -> Unspec
+(define check-equal-type!
+  (lambda (ty1 ty2 exp)
+    ()))
+
+; to make the output type easy to read, we define these function
 
 
-; value-of : Exp * Env -> ExpVal
-(define value-of
-  (lambda (exp env)
-    (cases expression exp
-      (const-exp (num) (num-val num))
-      (var-exp (var) (apply-env var env))
-      (diff-exp (exp1 exp2) (num-val
-                             (- (expval->num (value-of exp1 env))
-                                (expval->num (value-of exp2 env)))))
-      (zero?-exp (exp)
-                 (let ((val (expval->num (value-of exp env))))
-                   (if (= val 0)
-                       (bool-val #t)
-                       (bool-val #f))))
-      (if-exp (exp1 exp2 exp3)
-              (let ((condi (expval->bool (value-of exp1 env))))
-                (if condi
-                    (value-of exp2 env)
-                    (value-of exp3 env))))
-      (let-exp (var exp body) (value-of body
-                                        (extend-env var
-                                                    (value-of exp env)
-                                                    env)))
-      (proc-exp (param body) (proc-val (procedure param body env)))
-      (call-exp (procid exp)
-                (let ((proci (expval->proc (value-of procid env)))
-                      (param (value-of exp env)))
-                  (apply-procedure proci param))))))
-
-
-; value-of-program : Program -> Expval
-(define value-of-program
-  (lambda (pgm)
-    (cases program pgm
-      (a-program (exp) (value-of exp init-env)))))
-
-
-; run : String -> Expval
-(define run
-  (lambda (str)
-    (value-of-program (scan&parse str))))
 
 
 
