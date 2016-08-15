@@ -1,5 +1,12 @@
 #lang eopl
-;lang-CALL-BY-REFERENCE
+;language : CALL BY NAME+NEED
+
+; Call by name is a kind of lazy evaluation. Under this parameter
+; passing stratage, the operand is not evaluated untill it is
+; needed in the proc body. What is really passed is just the AST + its env.
+
+; Call by need is a imporvment of call by name, it stores the value after first
+; evalution so that aviod the repeated evaluation.
 
 
 ;concrete & abstract syntax tree & scanner/parser
@@ -103,7 +110,7 @@
 ; expressed value & denoted value
 ;=====================================================================
 ;expressed value : Int Bool Proc Mutpair
-;denoted value   : Ref(expressed value)
+;denoted value   : Ref(expressed value + thunk)
 ;-------
 
 ;------ scheme value
@@ -113,6 +120,7 @@
   (procedure (var symbol?)
              (body expression?)
              (en env?)))
+
 ; ref type = number => address in store
 (define ref?
   (lambda (ref)
@@ -123,6 +131,12 @@
 (define-datatype mutpair mutpair?
   (a-pair (left-loc ref?)
           (right-loc ref?)))
+
+
+;thunk : the under-evaluated expression of operand + its env
+(define-datatype thunk thunk?
+  (a-thunk (arg expression?)
+           (en env?)))
 
 
 ;------ expressed value : expval
@@ -164,7 +178,7 @@
 ; environment & store
 ;=====================================================================
 ;env   : var --- ref
-;store :         ref--- expval
+;store :         ref--- expval + thunk
 
 
 ;---environment---   
@@ -237,7 +251,14 @@
 ; apply-deref : ref -> expval
 (define apply-deref
   (lambda (ref)
-    (list-ref the-store ref)))
+    (let ((res (list-ref the-store ref)))
+      (if (expval? res)
+          res
+          (cases thunk res
+            (a-thunk (exp env) (let ((v (value-of exp env)))     ;!!! eval the value of thunk
+                                 (begin (apply-setref! ref v)  ;!!! improvement : store the value instead of a thunk.
+                                        v))))))))
+
 
 ; apply-setref : ref * expval -> unspecified
 (define apply-setref!
@@ -279,9 +300,9 @@
       (proc-exp (param body) (proc-val (procedure param body env)))
       (call-exp (procid exp)
                 (let ((proci (expval->proc (value-of procid env)))
-                      (refi (cases expression exp ;!!!var => get ref, other exp => get value and create a new ref
+                      (refi (cases expression exp ;!!!var => get ref, other exp => create a new ref to a new thunk
                               (var-exp (var) (apply-env var env))
-                              (else (apply-newref (value-of exp env))))))
+                              (else (apply-newref (a-thunk exp env))))))
                   (apply-procedure proci refi)))
       (begin-exp (exp exps)
                  (define inner
