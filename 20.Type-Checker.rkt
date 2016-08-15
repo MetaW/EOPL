@@ -25,6 +25,7 @@
 (define-datatype program program?
   (a-program (exp expression?)))
 
+
 (define-datatype expression expression?
   (const-exp (num number?))
   (diff-exp (exp1 expression?)
@@ -43,11 +44,13 @@
   (call-exp (operator expression?)
             (operand expression?)))
 
-(define-datetype type type?
+
+(define-datatype type type?
   (int-type)
   (bool-type)
   (proc-type (arg-ty type?)
              (res-ty type?)))
+
 
 
 
@@ -87,44 +90,8 @@
   (sllgen:make-string-parser scanner-spec parser-spec))
 
 
-; expressed valus && denoted value
-;----------------------------------------------------
-;expressed value : num-val, bool-val, proc-val
-;denoted value : num-val, bool-val, proc-val
 
 
-; datatype proc is not necessary
-(define-datatype proc proc?
-  (procedure (var symbol?)
-             (body expression?)
-             (en env?)))
-
-(define-datatype expval expval?
-  (num-val (num number?))
-  (bool-val (bool boolean?))
-  (proc-val (proc proc?)))
-
-
-; extractor : expval -> number
-(define expval->num
-  (lambda (val)
-    (cases expval val
-      (num-val (num) num)
-      (else (eopl:error "expval extract error in expval->num: ~s" val)))))
-
-; extractor : expval -> bool
-(define expval->bool
-  (lambda (val)
-    (cases expval val
-      (bool-val (bool) bool)
-      (else (eopl:error "expval extract error in expval->bool: ~s" val)))))
-
-; extractor : expval -> proc
-(define expval->proc
-  (lambda (val)
-    (cases expval val
-      (proc-val (proc) proc)
-      (else (eopl:error "expval extract error in expval->bool: ~s" val)))))
 
 
 
@@ -159,6 +126,8 @@
 
 
 
+
+
 ; type checker
 ;----------------------------------------------------
 
@@ -166,22 +135,87 @@
 ; check-equal-type! : type * type * exp -> Unspec
 (define check-equal-type!
   (lambda (ty1 ty2 exp)
-    ()))
+    (if (not (equal? ty1 ty2))
+        (eopl:error "types didn't match: " (type-to-external-form ty1) "!=" (type-to-external-form ty2) "in" exp)
+        '())))
+
 
 ; to make the output type easy to read, we define these function
+;type-to-external-form : ty -> list
+(define type-to-external-form
+  (lambda (ty)
+    (cases type ty
+      (int-type () 'int)
+      (bool-type () 'bool)
+      (proc-type (arg-ty res-ty)
+                 (list (type-to-external-form arg-ty)
+                       '->
+                       (type-to-external-form res-ty))))))
 
 
+;type-of : exp * tenv -> type
+(define type-of
+  (lambda (exp tenv)
+    (cases expression exp
+      (const-exp (num) (int-type))
+      (var-exp (var) (apply-tenv var tenv))
+      (diff-exp (exp1 exp2) (let ((ty1 (type-of exp1 tenv))
+                                  (ty2 (type-of exp2 tenv)))
+                              (begin (check-equal-type! ty1 (int-type) exp1)
+                                     (check-equal-type! ty2 (int-type) exp2)
+                                     (int-type))))
+      (zero?-exp (exp) (let ((ty (type-of exp tenv)))
+                         (begin (check-equal-type! ty (int-type) exp)
+                                (bool-type))))
+      (if-exp (exp1 exp2 exp3) (let ((ty1 (type-of exp1 tenv))
+                                     (ty2 (type-of exp2 tenv))
+                                     (ty3 (type-of exp3 tenv)))
+                                 (begin (check-equal-type! ty1 (bool-type) exp1)
+                                        (check-equal-type! ty2 ty3 exp)
+                                        ty2)))
+      (let-exp (var exp1 body) (type-of body (extend-tenv var
+                                                         (type-of exp1 tenv)
+                                                         tenv)))
+      (proc-exp (var argty exp1) (let ((resty (type-of exp1 (extend-tenv var argty tenv))))
+                                (proc-type argty resty)))
+      (call-exp (rand rator) (let ((rand-ty (type-of rand tenv))
+                                   (rator-ty (type-of rator tenv)))
+                               (cases type rand-ty
+                                 (proc-type (argty resty) (begin (check-equal-type! argty rator-ty exp)
+                                                                 resty))
+                                 (else (eopl:error "operand :" rand "is not a proc-type, but" rand-ty))))))))
 
+;type-of-program : program -> type
+(define type-of-program
+  (lambda (pgm)
+    (cases program pgm
+      (a-program (exp) (type-of exp init-tenv)))))
 
+;check : string -> list:(easy read type)
+(define check 
+  (lambda (str)
+    (type-to-external-form (type-of-program (scan&parse str))))) ;!!! pretty print with : type-to-external-form
 
 ; test
 ;----------------------------------------------------
 
-;> (run "let f = proc (x) -(x,10) in (f 20)")
-;  #(struct:num-val 10)
+;> (check "123")
+;  int
 
-;> (run "let f = proc (x) proc (y) -(x,y) in ((f 5) 3)")
-; #(struct:num-val 2)
+;> (check "zero?(123)")
+;  bool
 
-;> (run "let x = 200 in let f = proc (z) -(z,x) in let x = 100 in let g = proc (z) -(z,x) in -((f 1), (g 1))")
-;  #(struct:num-val -100)
+;> (check "-(12,5)")
+;  int
+
+;> (check "if zero?(0) then 123 else 345")
+;  int
+
+;> (check "let x = 123 in x")
+;  int
+
+;> (check "proc (x:int) proc(y:bool) -(x,1)")
+;  (int -> (bool -> int))
+
+;> (check "let f = proc (x:int) -(x,1) in (f 5)")
+;  int
