@@ -173,7 +173,9 @@
       (int-type () 'int)
       (bool-type () 'bool)
       (unit-type () 'unit)
-      (pair-type (ty1 ty2) (list "(" (type-to-external-form ty1) "," (type-to-external-form ty2) ")"))
+      (pair-type (ty1 ty2) (list (type-to-external-form ty1)
+                                 '&
+                                 (type-to-external-form ty2)))
       (proc-type (ty1 ty2) (list (type-to-external-form ty1)
                                  '->
                                  (type-to-external-form ty2))))))
@@ -201,9 +203,10 @@
       (let-exp (var exp body) (let ((ty (type-of exp tenv)))
                                 (type-of body (extend-tenv var ty tenv))))
       (proc-exp (var ty body) (proc-type ty (type-of body (extend-tenv var ty tenv))) )
-      (call-exp (procid exp) (let ((procty (apply-tenv procid tenv)))
+      (call-exp (procid exp) (let ((procty (type-of procid tenv)))
                                (cases type procty
-                                 (proc-type (opty arty) (check-equal-type! opty (type-of exp tenv) exp))
+                                 (proc-type (opty arty) (begin (check-equal-type! opty (type-of exp tenv) exp)
+                                                               arty))
                                  (else (eopl:error "operand: " procid "is not proc-type, but" procty)))))
       (begin-exp (exp exps)
                  (define inner
@@ -231,12 +234,14 @@
       (setleft-exp (exp1 exp2) (let ([pty (type-of exp1 tenv)]
                                      [vty (type-of exp2 tenv)])
                                  (cases type pty
-                                   (pair-type (lty rty) (check-equal-type! lty vty exp))
+                                   (pair-type (lty rty) (begin (check-equal-type! lty vty exp)
+                                                               (unit-type)))
                                    (else eopl:error "type" pty "is not pair-type"))))
       (setright-exp (exp1 exp2) (let ([pty (type-of exp1 tenv)]
                                       [vty (type-of exp2 tenv)])
                                  (cases type pty
-                                   (pair-type (lty rty) (check-equal-type! rty vty exp))
+                                   (pair-type (lty rty) (begin (check-equal-type! rty vty exp)
+                                                               (unit-type)))
                                    (else eopl:error "type" pty "is not pair-type")))))))
 
 
@@ -247,8 +252,8 @@
       (a-program (exp) (type-of exp init-tenv)))))
 
 
-; run : String -> list
-(define run
+; check : String -> list
+(define check
   (lambda (str)
     (type-to-external-form (type-of-program (scan&parse str)))))
 
@@ -257,5 +262,20 @@
 ; test
 ;=====================================================================
 
-;> (run "let f = proc (x) set x = 5 in let t = 2 in begin (f t); t end")
-;  #(struct:num-val 5)
+;> (check "pair(123,proc(x:int) 123)")
+;  (int & (int -> int))
+
+;> (check "pair(pair(123,123),pair(123,123))")
+;  ((int & int) & (int & int))
+
+;> (check "left(pair(zero?(123),123))")
+;  bool
+
+;> (check "begin 123; zero?(123) end")
+;  bool
+
+;> (check "let x = 123 in set x = 234")
+;  unit
+
+;> (check "let x = pair(123,123) in setright(x,234)")
+;  unit
