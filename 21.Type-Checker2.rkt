@@ -16,7 +16,7 @@
 ;              | if Expression then Expression else Expression
 ;              | Identifer
 ;              | let Identifer = Expression in Expression
-;              | proc (Idenfifer) Expression
+;              | proc (Idenfifer:Type) Expression
 ;              | (Expression Expression)
 ;              | begin Expression {; Expression}* end
 ;              | set Identifer = Expression
