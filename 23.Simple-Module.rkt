@@ -1,11 +1,21 @@
 #lang eopl
-; a type checker for lang-PROC
+; lang : Simple Module
 
-;language-PROC : concrete & abstract syntax tree
+;lang : concrete & abstract syntax tree
 ;----------------------------------------------------
 ;concrete syntax tree:
 
-;Program :: = Expression
+
+;Program :: = {ModuleDef}* Expression
+
+
+;ModuleDef :: = module Identifer interface Interface body ModuleBody
+
+;Interface :: = [ {Declare}* ]
+;Declare :: = Indentifer : Type
+
+;ModuleBody :: = [ {Definition}* ]
+;Definition :: = Identifer = Expression
 
 ;Expression :: = Number
 ;              | -(Expression, Expression)
@@ -15,6 +25,7 @@
 ;              | let Identifer = Expression in Expression
 ;              | proc (Idenfifer : Type) Expression
 ;              | (Expression Expression)
+;              | from Identifer take Identifer
 
 ;Type :: = Int
 ;        | Bool
@@ -23,33 +34,38 @@
 
 ; abstract syntax tree
 (define-datatype program program?
-  (a-program (exp expression?)))
+  (a-program (a-program1 (list-of moduleDef?)) (a-program2 expression?)))
 
+(define-datatype moduleDef moduleDef?
+  (a-module-def (a-module-def3 symbol?) (a-module-def4 interface?) (a-module-def5 moduleBody?)))
+
+(define-datatype interface interface?
+  (a-interface (a-interface6 (list-of declear?))))
+
+(define-datatype declear declear?
+  (a-declear (a-declear7 symbol?) (a-declear8 type?)))
+
+(define-datatype moduleBody moduleBody?
+  (a-module-body (a-module-body9 (list-of definition?))))
+
+(define-datatype definition definition?
+  (a-definition (a-definition10 symbol?) (a-definition11 expression?)))
 
 (define-datatype expression expression?
-  (const-exp (num number?))
-  (diff-exp (exp1 expression?)
-            (exp2 expression?))
-  (zero?-exp (exp expression?))
-  (if-exp (exp1 expression?)
-          (exp2 expression?)
-          (exp3 expression?))
-  (var-exp (exp symbol?))
-  (let-exp (var symbol?)
-           (exp expression?)
-           (body expression?))
-  (proc-exp (var symbol?)
-            (arg-ty type?)
-            (body expression?))
-  (call-exp (operator expression?)
-            (operand expression?)))
-
+   (const-exp (const-exp12 number?))
+   (diff-exp (diff-exp13 expression?) (diff-exp14 expression?))
+   (zero?-exp (zero?-exp15 expression?))
+   (if-exp (if-exp16 expression?) (if-exp17 expression?) (if-exp18 expression?))
+   (var-exp (var-exp19 symbol?))
+   (let-exp (let-exp20 symbol?) (let-exp21 expression?) (let-exp22 expression?))
+   (proc-exp (proc-exp23 symbol?) (proc-exp24 type?) (proc-exp25 expression?))
+   (call-exp (call-exp26 expression?) (call-exp27 expression?))
+   (qulified-var-exp (qulified-var-exp28 symbol?) (qulified-var-exp29 symbol?)))
 
 (define-datatype type type?
   (int-type)
   (bool-type)
-  (proc-type (arg-ty type?)
-             (res-ty type?)))
+  (proc-type (proc-type30 type?) (proc-type31 type?)))
 
 
 
@@ -68,7 +84,12 @@
 
 
 (define parser-spec
- '((program (expression) a-program)
+ '((program ((arbno moduleDef) expression) a-program)
+   (moduleDef ("module" identifer "interface" interface "body" moduleBody) a-module-def)
+   (interface ("[" (arbno declear) "]") a-interface)
+   (declear (identifer ":" type) a-declear)
+   (moduleBody ("[" (arbno definition) "]") a-module-body)
+   (definition (identifer "=" expression) a-definition)
    (expression (number) const-exp)
    (expression ("-" "(" expression "," expression ")") diff-exp)
    (expression ("zero?" "(" expression ")") zero?-exp)
@@ -77,6 +98,7 @@
    (expression ("let" identifer "=" expression "in" expression) let-exp)
    (expression ("proc" "(" identifer ":" type ")" expression) proc-exp)
    (expression ("(" expression expression ")") call-exp)
+   (expression ("from" identifer "take" identifer) qulified-var-exp)
    (type ("int") int-type)
    (type ("bool") bool-type)
    (type ("(" type "->" type ")") proc-type)))
@@ -94,6 +116,11 @@
 
 
 
+
+
+; type checker
+;==================================================================================
+;==================================================================================
 
 ; type environment
 ;----------------------------------------------------
@@ -130,6 +157,10 @@
 
 ; type checker
 ;----------------------------------------------------
+; the access control of module is realised by type checker, well typed
+; programs should not contain codes that try to access bindings that do not appear
+; in the interface (aka: private var). So the env for eval do not need to store the interface.
+
 
 ; auxiliary function:
 ; check-equal-type! : type * type * exp -> Unspec
@@ -195,6 +226,62 @@
 (define check 
   (lambda (str)
     (type-to-external-form (type-of-program (scan&parse str))))) ;!!! pretty print with : type-to-external-form
+
+
+
+
+
+; interpreter
+;==================================================================================
+;==================================================================================
+; to make it simple we make the lang immutable, so that it do not contain a store.
+
+
+;environment
+;----------------------------------------------------
+(define-datatype env env?
+  (empty-env)
+  (extend-env (var symbol?)
+              (val expval?)
+              (senv env?))
+  (extend-env-with-module (name symbol?)
+                          (menv module-val?)
+                          (senv env?)))
+
+
+
+
+
+; eval mudules --> module-val
+;----------------------------------------------------
+; we do not use value-of to eval module, because module will not
+; become a expval after eval, but a env: module-val.
+(define-datatype module-val module-val?
+  (a-module (bindings env?)))
+
+
+
+
+
+; eval expression --> expval  
+;----------------------------------------------------
+ (define-datatype proc proc?
+   (a-procedure (var symbol?)
+                (body expression?)
+                (senv env?)))
+
+(define-datatype expval expval?
+  (int-val (ival number?))
+  (bool-val (bval boolean?))
+  (proc-val (proc proc?)))
+
+
+
+
+
+
+
+
 
 ; test
 ;----------------------------------------------------
